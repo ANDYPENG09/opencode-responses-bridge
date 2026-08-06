@@ -1,5 +1,5 @@
 ---
-name: opencode-responses-bridge
+name: opencode-responses-bridge-skill
 version: 1.1.0
 description: "Local stdlib-only proxy that adapts OpenAI Chat Completions to/from the Responses API so any OpenAI-compatible agent client (WorkBuddy, Cursor, Open WebUI, LobeChat, ...) can use Responses-API-only models such as OpenCode Go gpt-5.6-luna. Use when: setting up a Chat Completions to Responses API bridge, local proxy for responses-only models, fixing 'model only supports responses API', 'invalid_prompt' HTTP 400, 'custom model error 10000', or protocol transcoding for any Responses API endpoint (OPENCODE_UPSTREAM). 使用场景：协议转接/本地代理/把只支持 Responses API 的模型接入 OpenAI 兼容客户端/模型报 invalid_prompt 或自定义模型错误 10000。"
 agent_created: true
@@ -20,7 +20,7 @@ metadata:
         required: false
         description: Local listen port (default 8787).
     emoji: "🔄"
-    homepage: https://github.com/ANDYPENG09/opencode-responses-bridge
+    homepage: https://github.com/ANDYPENG09/opencode-responses-bridge-skill
     os:
       - windows
       - macos

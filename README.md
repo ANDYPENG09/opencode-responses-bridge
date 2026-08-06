@@ -14,8 +14,8 @@
 >
 > - **WorkBuddy / SkillHub:** install the skill from SkillHub (zip or CLI), then copy
 >   `scripts/proxy.py` + `scripts/start_proxy.bat` to a stable folder and run it.
-> - **ClawHub:** `clawhub install opencode-responses-bridge`
-> - **GitHub:** `git clone https://github.com/ANDYPENG09/opencode-responses-bridge`
+> - **ClawHub:** `clawhub install opencode-responses-bridge-skill`
+> - **GitHub:** `git clone https://github.com/ANDYPENG09/opencode-responses-bridge-skill`
 >
 > **How to invoke**
 >
