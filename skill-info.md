@@ -39,5 +39,6 @@ Chat Completions，支持：
 
 ## 版本
 
+- v1.2.0（2026-08-08）：安全加固——日志默认仅摘要并移至系统临时目录，新增 `BRIDGE_DEBUG` 开关控制正文记录与调试 dump，技能目录零运行时写入；文档如实披露日志行为。
 - v1.1.0（2026-08-06）：通用化改造——任意 Responses API 上游可配置、示例与排障完善、适配 WorkBuddy/ClawHub/GitHub 多平台发布。
 - v1.0.0（2026-08-06）：首个版本，已在 OpenCode Go `gpt-5.6-luna` / `deepseek-v4-flash` 上实测通过。
