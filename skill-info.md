@@ -1,44 +1,51 @@
-# OpenCode Responses Bridge（Responses API ↔ Chat Completions 本地转接）
+# OpenCode Responses Bridge (Responses API ↔ Chat Completions local adapter)
 
-## 简介
+## Overview
 
-一个零依赖的本地协议转换代理，解决「AI 客户端的自定义模型通道只支持 OpenAI Chat
-Completions，而部分上游模型（如 OpenCode Go 的 gpt-5.6-luna）只暴露 Responses API」的
-兼容问题。
+A zero-dependency local protocol-conversion proxy that solves: "AI clients' custom-model
+channels only support OpenAI Chat Completions, while some upstream models (such as OpenCode
+Go's gpt-5.6-luna) only expose the Responses API."
 
-代理把客户端发出的 Chat Completions 请求翻译成 Responses API 转发给上游，再把响应转回
-Chat Completions，支持：
-- 文本生成与流式 SSE
-- 工具调用（tool_calls ↔ function_call，含多轮 tool 循环与多函数并发）
-- reasoning 摘要透传（reasoning_content）
-- 多模态图片输入（image_url → input_image）
-- 任意 Responses API 端点（OPENCODE_UPSTREAM 可配置）
+The proxy translates the client's Chat Completions request into the Responses API, forwards it
+to the upstream, and translates the response back to Chat Completions. Supports:
+- Text generation and streaming SSE
+- Tool calls (tool_calls ↔ function_call, including multi-round tool loops and concurrent calls)
+- Reasoning summary passthrough (reasoning_content)
+- Multimodal image input (image_url → input_image)
+- Any Responses API endpoint (configurable via OPENCODE_UPSTREAM)
 
-## 使用场景
+## Use cases
 
-- 在 OpenAI 兼容客户端中使用仅支持 Responses API 的模型
-- 任何需要 Chat Completions ↔ Responses API 协议转换的本地兼容层
+- Use Responses-API-only models in OpenAI-compatible clients
+- Any local compatibility layer that needs Chat Completions ↔ Responses API conversion
 
-## 安装与使用
+## Install & use
 
-1. 复制 `scripts/proxy.py`（纯 Python 标准库，Python 3.8+，无需安装依赖）。
-2. 运行 `python3 proxy.py`（默认监听 `127.0.0.1:8787`），或双击 `scripts/start_proxy.bat`。
-3. 在客户端把模型 URL 指向 `http://127.0.0.1:8787/v1/chat/completions`，模型 ID 填上游实际 ID。
-4. 冒烟测试与分客户端示例见 `README.md` 与 `examples/`。
+1. Copy `scripts/proxy.py` (pure Python standard library, Python 3.8+, no dependencies).
+2. Run `python3 proxy.py` (default listens on `127.0.0.1:8787`), or double-click
+   `scripts/start_proxy.bat`.
+3. In the client, point the model URL at `http://127.0.0.1:8787/v1/chat/completions` and set the
+   model ID to the actual upstream ID.
+4. Smoke test and per-client examples: see `README.md` and `examples/`.
 
-详细接入步骤与排障见 `SKILL.md`；协议字段映射见 `references/protocol-mapping.md`。
+Detailed setup steps and troubleshooting: `SKILL.md`; protocol field mapping:
+`references/protocol-mapping.md`.
 
-## 依赖
+## Dependencies
 
-- Python 3.8+（仅标准库）
-- 无任何第三方包
+- Python 3.8+ (standard library only)
+- No third-party packages
 
-## 作者
+## Author
 
 - **ANDYPENG09**
 
-## 版本
+## Version
 
-- v1.2.0（2026-08-08）：安全加固——日志默认仅摘要并移至系统临时目录，新增 `BRIDGE_DEBUG` 开关控制正文记录与调试 dump，技能目录零运行时写入；文档如实披露日志行为。
-- v1.1.0（2026-08-06）：通用化改造——任意 Responses API 上游可配置、示例与排障完善、适配 WorkBuddy/ClawHub/GitHub 多平台发布。
-- v1.0.0（2026-08-06）：首个版本，已在 OpenCode Go `gpt-5.6-luna` / `deepseek-v4-flash` 上实测通过。
+- v1.2.0 (2026-08-08): security hardening — logging is summary-only by default and moved to the
+  system temp directory; new `BRIDGE_DEBUG` switch controls body logging and debug dumps; zero
+  runtime writes inside the skill folder; docs now accurately disclose the logging behavior.
+- v1.1.0 (2026-08-06): generalization — any Responses API upstream configurable, examples and
+  troubleshooting improved, multi-platform publishing (WorkBuddy/ClawHub/GitHub).
+- v1.0.0 (2026-08-06): first release, verified against OpenCode Go `gpt-5.6-luna` /
+  `deepseek-v4-flash`.
