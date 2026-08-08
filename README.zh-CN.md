@@ -93,14 +93,24 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 
 ## 调试
 
-代理会把每次请求写入同目录 `proxy-requests.log`（摘要、auth 脱敏），并把完整入站请求 /
-上游载荷 / 上游报错分别落盘：`proxy-last-request.json`、`proxy-last-upstream.json`、
-`proxy-last-error.txt`（覆盖式）。排查「客户端报错但 curl 正常」时先看这几个文件。
+默认情况下代理只把每次请求的**摘要行**（方法、路径、模型、状态、耗时）写入系统临时目录
+的 `proxy-requests.log`（Windows 为 `%TEMP%/opencode-responses-bridge/`，其余为
+`/tmp/opencode-responses-bridge/`），auth 已脱敏，**技能目录内不产生任何文件**。
+排查「客户端报错但 curl 正常」时，设置 `BRIDGE_DEBUG=1` 重启代理：
+
+- 日志追加记录请求头（Authorization 脱敏）与请求正文前 8000 字符；
+- 调试 dump：`proxy-last-upstream.json`（上游请求）、`proxy-last-error.txt`（上游报错），
+  覆盖式写入同一临时目录。
+
+> ⚠️ 注意：开启 `BRIDGE_DEBUG=1` 后，请求正文（对话内容、工具参数等）会以明文写入本地
+> 日志文件——排查完请及时关闭。
 
 ## 安全
 
 - 默认只监听 `127.0.0.1`，不对外网开放
 - 密钥不落盘、不进代码；仅从入站请求头透传
+- 默认只记录摘要日志（不含正文）且位于系统临时目录；`BRIDGE_DEBUG=1` 时才会以明文记录
+  请求正文（前 8000 字符）——生产使用请保持关闭
 - 上游请求已内置浏览器 UA 以绕过 Cloudflare 默认 UA 拦截（`error code: 1010`）
 
 ## License
