@@ -98,15 +98,26 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 
 ## Debugging
 
-The proxy logs every request to `proxy-requests.log` (summary, auth redacted) and dumps the
-full inbound request / upstream payload / upstream error to `proxy-last-request.json`,
-`proxy-last-upstream.json`, `proxy-last-error.txt` (overwrite mode). When "client errors but
-curl works", check these files first.
+By default the proxy appends a one-line **summary** per request (method, path, model, status,
+latency) to `proxy-requests.log` under the system temp directory
+(`%TEMP%/opencode-responses-bridge/` on Windows, `/tmp/opencode-responses-bridge/` elsewhere);
+the Authorization header is redacted and **no files are ever created inside the skill folder**.
+When "client errors but curl works", restart with `BRIDGE_DEBUG=1`:
+
+- the log additionally records request headers (Authorization redacted) and the request body
+  (first 8000 chars);
+- debug dumps `proxy-last-upstream.json` (upstream request) and `proxy-last-error.txt`
+  (upstream error) are written in overwrite mode to the same temp directory.
+
+> Caution: with `BRIDGE_DEBUG=1`, request bodies (conversation content, tool arguments) are
+> written to local files in plaintext — disable it after troubleshooting.
 
 ## Security
 
 - Listens on `127.0.0.1` by default, not exposed to the network
 - Keys are never written to disk or code; relayed only from the inbound header
+- Logging is summary-only by default and lives in the system temp directory; request bodies
+  are logged in plaintext only when `BRIDGE_DEBUG=1` is set — keep it off in production
 - Upstream requests use a browser UA to bypass Cloudflare's default-UA block (`error code: 1010`)
 
 ## License
