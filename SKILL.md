@@ -1,6 +1,6 @@
 ---
 name: opencode-responses-bridge-skill
-version: 1.1.0
+version: 1.2.0
 description: "Local stdlib-only proxy that adapts OpenAI Chat Completions to/from the Responses API so any OpenAI-compatible agent client (WorkBuddy, Cursor, Open WebUI, LobeChat, ...) can use Responses-API-only models such as OpenCode Go gpt-5.6-luna. Use when: setting up a Chat Completions to Responses API bridge, local proxy for responses-only models, fixing 'model only supports responses API', 'invalid_prompt' HTTP 400, 'custom model error 10000', or protocol transcoding for any Responses API endpoint (OPENCODE_UPSTREAM). 使用场景：协议转接/本地代理/把只支持 Responses API 的模型接入 OpenAI 兼容客户端/模型报 invalid_prompt 或自定义模型错误 10000。"
 agent_created: true
 allowed-tools: python3, curl
@@ -19,6 +19,9 @@ metadata:
       - name: PROXY_PORT
         required: false
         description: Local listen port (default 8787).
+      - name: BRIDGE_DEBUG
+        required: false
+        description: Set to 1 to log request headers (auth redacted) and body (first 8000 chars) and write debug dumps to the system temp dir; default off.
     emoji: "🔄"
     homepage: https://github.com/ANDYPENG09/opencode-responses-bridge-skill
     os:
@@ -116,7 +119,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 2. **模型 ID 不带前缀**：OpenCode Go 网关模型 ID 是 `gpt-5.6-luna` 而非 `opencode-go/gpt-5.6-luna`，带前缀会返回 401。其他上游以各自文档为准。
 3. **默认上游为 OpenCode Go**：`opencode.ai` 在大陆网络可能不可达，请按需设置 `OPENCODE_UPSTREAM` 到可达的 Responses API 端点。
 4. **图片输入**：仅转换 `image_url` part（URL 或 base64 data URL）；多模态能力取决于上游模型是否支持 `input_image`。
-5. **安全边界**：代理只监听 `127.0.0.1`（默认），不对外网开放；密钥不落盘、不进代码。
+5. **安全边界**：代理只监听 `127.0.0.1`（默认），不对外网开放；密钥不落盘、不进代码。默认仅写摘要日志，位置在系统临时目录（技能目录零运行时写入）；设置 `BRIDGE_DEBUG=1` 后会在临时目录记录请求正文（前 8000 字符）与调试 dump——正文可能含敏感对话内容，排查完请关闭。
 
 ## 排障
 
@@ -127,7 +130,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 | 400 `invalid_prompt`（客户端报「自定义模型错误 10000」） | 会话历史里 assistant 消息 content 是数组，part 类型 `text` 未转成 `output_text` | 升级到最新 `scripts/proxy.py`；新会话正常、有历史即报错是此 bug 的典型特征 |
 | 返回 `response` 对象而非 `chat.completion` | 直连了 `/responses` 端点 | 必须经代理 `http://127.0.0.1:8787/v1/chat/completions` |
 | 端口占用 | 代理重复启动 | 换 `PROXY_PORT` 或结束旧进程 |
-| 客户端报错但 curl 正常 | 请求结构差异 | 看代理同目录 `proxy-requests.log`（摘要、auth 脱敏）及 `proxy-last-request.json` / `proxy-last-upstream.json` / `proxy-last-error.txt` |
+| 客户端报错但 curl 正常 | 请求结构差异 | 默认日志为摘要（系统临时目录 `%TEMP%/opencode-responses-bridge/`）；`BRIDGE_DEBUG=1` 后记录请求头与正文前 8000 字符，并写 `proxy-last-upstream.json` / `proxy-last-error.txt` |
 
 ## 资源
 
