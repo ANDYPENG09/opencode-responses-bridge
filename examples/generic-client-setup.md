@@ -1,21 +1,25 @@
-# 示例：接入通用 OpenAI 兼容客户端
+# Example: generic OpenAI-compatible client
 
-任何支持「自定义 OpenAI 兼容模型 base URL」的客户端（Cursor、Open WebUI、LobeChat、
-NextChat、one-api 系网关等）都可以直接接入本代理：
+Any client that supports a "custom OpenAI-compatible model base URL" (Cursor, Open WebUI,
+LobeChat, NextChat, one-api-style gateways, ...) can connect to this proxy:
 
-1. 启动代理：`python3 proxy.py`（默认 `http://127.0.0.1:8787`）。
-2. 在客户端配置自定义模型：
-   - **Base URL / API 地址**：`http://127.0.0.1:8787/v1`
-   - **模型名**：上游实际模型 ID（如 `gpt-5.6-luna`）
-   - **API Key**：上游 API key（必填，代理会透传到上游）
-   - **能力开关**：按上游实际能力勾选 工具调用 / 视觉 / 推理
+1. Start the proxy: `python3 proxy.py` (default `http://127.0.0.1:8787`).
+2. Configure a custom model in the client:
+   - **Base URL / API URL**: `http://127.0.0.1:8787/v1`
+   - **Model name**: the actual upstream model ID (e.g. `gpt-5.6-luna`)
+   - **API Key**: your upstream API key (required; the proxy relays it to the upstream)
+   - **Capability toggles**: enable tool calling / vision / reasoning according to the upstream
+     model's actual capabilities
 
-原理：客户端按 OpenAI 兼容协议把 Chat Completions 请求发给 `http://127.0.0.1:8787/v1/chat/completions`，
-代理翻译成 Responses API 转发上游，再把响应翻回 Chat Completions 返回给客户端。
+How it works: the client sends Chat Completions requests to
+`http://127.0.0.1:8787/v1/chat/completions` following the OpenAI-compatible protocol; the proxy
+translates them to the Responses API, forwards to the upstream, and translates the reply back
+to Chat Completions for the client.
 
-注意事项：
+Notes:
 
-- 客户端需能访问 `127.0.0.1`；若客户端与代理不在同一台机器，请改用局域网地址并
-  自行评估监听安全性（`PROXY_HOST` 默认只绑定本机）。
-- 不支持 Anthropic Messages 协议的客户端（如 Claude Code 直连模式）无法直接使用，
-  需要额外的 Anthropic↔Responses 适配层。
+- The client must be able to reach `127.0.0.1`; if the client and the proxy are on different
+  machines, use the LAN address instead and assess listening security yourself (`PROXY_HOST`
+  binds to localhost only by default).
+- Clients that only speak the Anthropic Messages protocol (e.g. Claude Code direct mode) cannot
+  be used directly — they need an extra Anthropic↔Responses adapter layer.
