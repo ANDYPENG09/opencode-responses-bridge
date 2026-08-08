@@ -1,7 +1,7 @@
-# 示例：接入 WorkBuddy（自定义模型）
+# Example: wire into WorkBuddy (custom model)
 
-1. 启动代理：双击 `scripts/start_proxy.bat`，或 `python3 proxy.py`。
-2. 编辑 WorkBuddy 自定义模型配置文件 `~/.workbuddy/models.json`，新增/修改条目。
+1. Start the proxy: double-click `scripts/start_proxy.bat`, or run `python3 proxy.py`.
+2. Edit the WorkBuddy custom-model config file `~/.workbuddy/models.json`, add/update an entry.
 
 ```
 {
@@ -9,7 +9,7 @@
 	"name": "gpt-5.6-luna (via proxy)",
 	"vendor": "Custom",
 	"url": "http://127.0.0.1:8787/v1/chat/completions",
-	"apiKey": "sk-你的上游key",
+	"apiKey": "sk-your-upstream-key",
 	"supportsToolCall": true,
 	"supportsImages": true,
 	"supportsReasoning": true,
@@ -17,16 +17,20 @@
 }
 ```
 
-要点：
+Key points:
 
-- `url` 必须指向代理的 Chat Completions 端点（**不要**直连上游 `/responses`）。
-- `apiKey` 填上游（如 OpenCode Go）的 API key；代理从入站 `Authorization` 头透传。
-- 模型 ID 填上游实际 ID（OpenCode Go 网关**不带前缀**，如 `gpt-5.6-luna`）。
-- 完全退出并重启 WorkBuddy（系统托盘右键退出，不是关窗口）后，在模型选择器选用该模型。
+- `url` must point at the proxy's Chat Completions endpoint (do **not** hit the upstream
+  `/responses` directly).
+- `apiKey` is the upstream (e.g. OpenCode Go) API key; the proxy relays it from the inbound
+  `Authorization` header.
+- The model ID must be the actual upstream ID (OpenCode Go gateway has **no prefix**, e.g.
+  `gpt-5.6-luna`).
+- Fully quit and restart WorkBuddy (quit from the system tray, not just close the window), then
+  select the model in the model picker.
 
-已知现象与处理：
+Known symptoms and handling:
 
-- 若「新会话第一条能用、有历史后报 10000」：升级到最新版 `scripts/proxy.py`
-  （assistant 历史消息 content 数组的类型转换问题）。
-- 若代理未运行：客户端会连接失败；先跑 `python3 proxy.py`，`curl http://127.0.0.1:8787/health`
-  应返回 `{"status":"ok"}`。
+- If "the first message works but 10000 appears once there is history": upgrade to the latest
+  `scripts/proxy.py` (assistant history message content array type conversion issue).
+- If the proxy is not running, the client cannot connect; first run `python3 proxy.py`, then
+  `curl http://127.0.0.1:8787/health` should return `{"status":"ok"}`.
