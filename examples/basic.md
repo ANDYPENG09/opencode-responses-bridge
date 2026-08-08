@@ -1,9 +1,10 @@
-# 示例：curl 输入/输出对
+# Example: curl input/output pairs
 
-以下请求直接打向本地代理 `http://127.0.0.1:8787/v1/chat/completions`，密钥放在
-`Authorization: Bearer <你的上游key>` 头。返回均为标准 OpenAI Chat Completions 结构。
+The requests below hit the local proxy `http://127.0.0.1:8787/v1/chat/completions` directly,
+with the key in the `Authorization: Bearer <your-upstream-key>` header. All responses are
+standard OpenAI Chat Completions structures.
 
-## 1. 文本（非流式）
+## 1. Text (non-streaming)
 
 ```
 curl http://127.0.0.1:8787/v1/chat/completions \
@@ -11,7 +12,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 	-d '{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"What is 2+3? Answer in one short sentence."}],"max_tokens":80,"stream":false}'
 ```
 
-期望输出（节选）：
+Expected output (excerpt):
 ```
 {
 	"object": "chat.completion",
@@ -23,7 +24,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 }
 ```
 
-## 2. 流式（SSE）
+## 2. Streaming (SSE)
 
 ```
 curl -N http://127.0.0.1:8787/v1/chat/completions \
@@ -31,7 +32,7 @@ curl -N http://127.0.0.1:8787/v1/chat/completions \
 	-d '{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Count 1 to 5, one per line."}],"max_tokens":80,"stream":true}'
 ```
 
-期望输出（节选）：
+Expected output (excerpt):
 ```
 data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
 data: {"choices":[{"delta":{"content":"1\n2\n3\n4\n5"},"finish_reason":null}]}
@@ -39,7 +40,7 @@ data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
 data: [DONE]
 ```
 
-## 3. 工具调用
+## 3. Tool calls
 
 ```
 curl http://127.0.0.1:8787/v1/chat/completions \
@@ -51,7 +52,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 		"tool_choice":"auto","stream":false}'
 ```
 
-期望输出（节选）：
+Expected output (excerpt):
 ```
 {
 	"choices": [
@@ -64,7 +65,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 }
 ```
 
-## 4. 多模态输入（图片）
+## 4. Multimodal input (image)
 
 ```
 curl http://127.0.0.1:8787/v1/chat/completions \
@@ -77,5 +78,5 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 		"max_tokens":300,"stream":false}'
 ```
 
-期望输出（节选）：`content` 为模型对图片的回答（如 "Gray"），上游推理摘要出现在
-`reasoning_content` 字段。
+Expected output (excerpt): `content` is the model's answer about the image (e.g. "Gray"); the
+upstream reasoning summary appears in the `reasoning_content` field.
