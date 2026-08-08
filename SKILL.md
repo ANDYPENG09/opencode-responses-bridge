@@ -1,7 +1,7 @@
 ---
 name: opencode-responses-bridge-skill
 version: 1.2.0
-description: "Local stdlib-only proxy that adapts OpenAI Chat Completions to/from the Responses API so any OpenAI-compatible agent client (WorkBuddy, Cursor, Open WebUI, LobeChat, ...) can use Responses-API-only models such as OpenCode Go gpt-5.6-luna. Use when: setting up a Chat Completions to Responses API bridge, local proxy for responses-only models, fixing 'model only supports responses API', 'invalid_prompt' HTTP 400, 'custom model error 10000', or protocol transcoding for any Responses API endpoint (OPENCODE_UPSTREAM). 使用场景：协议转接/本地代理/把只支持 Responses API 的模型接入 OpenAI 兼容客户端/模型报 invalid_prompt 或自定义模型错误 10000。"
+description: "Local stdlib-only proxy that adapts OpenAI Chat Completions to/from the Responses API so any OpenAI-compatible agent client (WorkBuddy, Cursor, Open WebUI, LobeChat, ...) can use Responses-API-only models such as OpenCode Go gpt-5.6-luna. Use when: setting up a Chat Completions to Responses API bridge, local proxy for responses-only models, fixing 'model only supports responses API', 'invalid_prompt' HTTP 400, 'custom model error 10000', or protocol transcoding for any Responses API endpoint (OPENCODE_UPSTREAM)."
 agent_created: true
 allowed-tools: python3, curl
 metadata:
@@ -30,74 +30,88 @@ metadata:
       - linux
 ---
 
-# OpenCode Responses Bridge（Responses API ↔ Chat Completions 本地转接）
+# OpenCode Responses Bridge (Responses API ↔ Chat Completions local adapter)
 
 ## Overview
 
-许多 AI 客户端的自定义模型通道只发 OpenAI **Chat Completions** 请求，而部分上游模型
-（典型：OpenCode Go 的 `gpt-5.6-luna`）只暴露 OpenAI **Responses API**，直接配置必然不可用
-（典型报错：`invalid_prompt` / `Invalid Responses API request` / WorkBuddy「自定义模型错误 10000」）。
+Many AI clients' custom-model channels only send OpenAI **Chat Completions** requests, while
+some upstream models (typically OpenCode Go's `gpt-5.6-luna`) only expose the OpenAI
+**Responses API** — configuring them directly is bound to fail (typical errors:
+`invalid_prompt` / `Invalid Responses API request` / WorkBuddy "custom model error 10000").
 
-本技能提供**零依赖本地转接代理**：客户端把 Chat Completions 打到本机代理，代理翻译成
-Responses API 转发给上游，再把返回翻回 Chat Completions（含流式 SSE、工具调用、reasoning、
-多模态输入）。任何能配置 OpenAI 兼容模型地址的客户端都可以接入。
+This skill provides a **zero-dependency local proxy**: the client sends Chat Completions to the
+local proxy, the proxy translates them to the Responses API and forwards to the upstream, then
+translates the reply back to Chat Completions (streaming SSE, tool calls, reasoning and
+multimodal input included). Any client that supports a custom OpenAI-compatible model URL can
+connect.
 
-## 快速开始
+## Quick start
 
-### 1. 获取代理脚本
-从本技能 `scripts/` 复制两个文件到任意稳定目录（例如 `~/responses-bridge/`）：
-- `proxy.py`（纯 Python 标准库，Python 3.8+，无需安装依赖）
-- `start_proxy.bat`（Windows 一键启动，双击即可；macOS/Linux 直接 `python3 proxy.py`）
+### 1. Get the proxy script
+Copy the two files from `scripts/` to any stable directory (e.g. `~/responses-bridge/`):
+- `proxy.py` (pure Python standard library, Python 3.8+, no dependencies)
+- `start_proxy.bat` (Windows one-click launcher; on macOS/Linux run `python3 proxy.py`)
 
-### 2. 启动代理
+### 2. Start the proxy
 ```
-python3 proxy.py        # 默认监听 http://127.0.0.1:8787
+python3 proxy.py        # listens on http://127.0.0.1:8787 by default
 ```
-可选环境变量：`OPENCODE_UPSTREAM`（上游 Responses 端点，默认 OpenCode Go）、
-`PROXY_HOST`（默认 127.0.0.1）、`PROXY_PORT`（默认 8787）。代理从入站请求的
-`Authorization: Bearer <key>` 头取上游密钥透传，密钥只在客户端配置里维护一份。
+Optional env vars: `OPENCODE_UPSTREAM` (upstream Responses endpoint, defaults to OpenCode Go),
+`PROXY_HOST` (default 127.0.0.1), `PROXY_PORT` (default 8787). The proxy relays the upstream key
+from the inbound `Authorization: Bearer <key>` header, so the key is maintained in exactly one
+place — the client's model config.
 
-### 3. 冒烟测试（不经客户端）
+### 3. Smoke test (without a client)
 ```
 curl http://127.0.0.1:8787/v1/chat/completions \
 	-H "Authorization: Bearer YOUR_API_KEY" -H "Content-Type: application/json" \
 	-d '{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"hi"}],"stream":false}'
 ```
-返回 HTTP 200 且为 `chat.completion` 结构即通过。
+A HTTP 200 with a `chat.completion` structure means it works.
 
-### 4. 配置客户端
-把客户端的自定义模型 URL 指向 `http://127.0.0.1:8787/v1/chat/completions`，模型名填上游
-实际模型 ID（OpenCode Go 网关的模型 ID **不带前缀**，如 `gpt-5.6-luna`）。
-分客户端示例见 `examples/`（WorkBuddy `models.json`、通用 OpenAI 兼容客户端、curl）。
+### 4. Configure the client
+Point the client's custom-model URL at `http://127.0.0.1:8787/v1/chat/completions` and set the
+model name to the actual upstream model ID (OpenCode Go gateway model IDs have **no prefix**,
+e.g. `gpt-5.6-luna`). Per-client examples live in `examples/` (WorkBuddy `models.json`, generic
+OpenAI-compatible client, curl).
 
-### 5. 验证
-在客户端发送一条消息，正常流式返回即成功。
+### 5. Verify
+Send a message from the client; a normal streaming reply means success.
 
-## 核心能力
+## Core capabilities
 
-- **文本与流式**：非流式返回标准 `chat.completion`；流式输出标准 SSE（role 开头 → content 增量 → `[DONE]`）。
-- **工具调用**：`tools`/`tool_choice` 双向映射；多轮 tool 循环（assistant `tool_calls` → `function_call`，tool 消息 → `function_call_output`）；流式多函数并发按 `item_id` 累积不丢参。
-- **Reasoning**：上游 reasoning 摘要 → `reasoning_content`（流式与非流式均支持）。
-- **多模态输入**：user 消息 `image_url` part → `input_image` part（base64 data URL 原样透传）。
-- **可配置上游**：`OPENCODE_UPSTREAM` 指向任意 OpenAI Responses API 兼容端点，不限于 OpenCode Go。
+- **Text & streaming**: non-streaming returns a standard `chat.completion`; streaming emits
+  standard SSE (role opening → content deltas → `[DONE]`).
+- **Tool calls**: `tools`/`tool_choice` mapped both ways; multi-round tool loops
+  (assistant `tool_calls` → `function_call`, tool messages → `function_call_output`);
+  concurrent streaming calls accumulate per `item_id` without dropping arguments.
+- **Reasoning**: upstream reasoning summary → `reasoning_content` (streaming and non-streaming).
+- **Multimodal input**: user `image_url` parts → `input_image` parts (base64 data URLs passed
+  through as-is).
+- **Configurable upstream**: `OPENCODE_UPSTREAM` can point at any OpenAI Responses
+  API-compatible endpoint, not just OpenCode Go.
 
-## 输入输出规范
+## Input / output contract
 
-- **入站**（客户端 → 代理）：标准 OpenAI Chat Completions 请求（`POST /v1/chat/completions`），支持 `messages`（system/user/assistant/tool）、`tools`、`tool_choice`、`max_tokens`、`temperature`、`top_p`、`stream`。
-- **出站**（代理 → 上游）：Responses API 请求（`input`/`instructions`/`tools`/`max_output_tokens`）。
-- **响应**：标准 Chat Completions（非流式 JSON 或 SSE 流），含 `usage`、`reasoning_content`、`tool_calls`。
-- 完整字段映射表见 `references/protocol-mapping.md`。
+- **Inbound** (client → proxy): standard OpenAI Chat Completions request
+  (`POST /v1/chat/completions`) with `messages` (system/user/assistant/tool), `tools`,
+  `tool_choice`, `max_tokens`, `temperature`, `top_p`, `stream`.
+- **Outbound** (proxy → upstream): Responses API request (`input`/`instructions`/`tools`/
+  `max_output_tokens`).
+- **Response**: standard Chat Completions (non-streaming JSON or SSE stream) including `usage`,
+  `reasoning_content`, `tool_calls`.
+- Full field mapping: `references/protocol-mapping.md`.
 
-## 使用示例
+## Usage example
 
-**把 luna 接入 WorkBuddy（models.json）：**
+**Wire luna into WorkBuddy (`models.json`):**
 ```
 {
 	"id": "gpt-5.6-luna",
 	"name": "gpt-5.6-luna (via proxy)",
 	"vendor": "Custom",
 	"url": "http://127.0.0.1:8787/v1/chat/completions",
-	"apiKey": "sk-你的上游key",
+	"apiKey": "sk-your-upstream-key",
 	"supportsToolCall": true,
 	"supportsImages": true,
 	"supportsReasoning": true,
@@ -105,36 +119,48 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 }
 ```
 
-**期望输出**（非流式）：
+**Expected output** (non-streaming):
 ```
 {"id":"chatcmpl-...","object":"chat.completion","model":"gpt-5.6-luna",
 	"choices":[{"index":0,"message":{"role":"assistant","content":"2 + 3 equals 5."},"finish_reason":"stop"}]}
 ```
 
-更多示例（含工具调用/流式/多模态输入输出对）见 `examples/`。
+More examples (tool calls / streaming / multimodal input-output pairs) in `examples/`.
 
-## 已知限制（能力边界）
+## Known limitations
 
-1. **仅适配 OpenAI 协议族**：代理面向 OpenAI 兼容客户端；使用 Anthropic Messages 协议的客户端（如 Claude Code 直连）需要额外的 Anthropic↔Responses 适配层，不在本技能范围内。
-2. **模型 ID 不带前缀**：OpenCode Go 网关模型 ID 是 `gpt-5.6-luna` 而非 `opencode-go/gpt-5.6-luna`，带前缀会返回 401。其他上游以各自文档为准。
-3. **默认上游为 OpenCode Go**：`opencode.ai` 在大陆网络可能不可达，请按需设置 `OPENCODE_UPSTREAM` 到可达的 Responses API 端点。
-4. **图片输入**：仅转换 `image_url` part（URL 或 base64 data URL）；多模态能力取决于上游模型是否支持 `input_image`。
-5. **安全边界**：代理只监听 `127.0.0.1`（默认），不对外网开放；密钥不落盘、不进代码。默认仅写摘要日志，位置在系统临时目录（技能目录零运行时写入）；设置 `BRIDGE_DEBUG=1` 后会在临时目录记录请求正文（前 8000 字符）与调试 dump——正文可能含敏感对话内容，排查完请关闭。
+1. **OpenAI protocol family only**: the proxy targets OpenAI-compatible clients; clients that
+   speak the Anthropic Messages protocol (e.g. Claude Code direct mode) need an extra
+   Anthropic↔Responses adapter layer, out of scope for this skill.
+2. **No prefix on model IDs**: OpenCode Go gateway model IDs are `gpt-5.6-luna`, not
+   `opencode-go/gpt-5.6-luna`; a prefixed ID returns 401. Follow each upstream's own docs.
+3. **Default upstream is OpenCode Go**: `opencode.ai` may be unreachable from mainland China;
+   set `OPENCODE_UPSTREAM` to a reachable Responses API endpoint as needed.
+4. **Image input**: only `image_url` parts are converted (URL or base64 data URL); multimodal
+   capability depends on the upstream model supporting `input_image`.
+5. **Security boundary**: the proxy listens on `127.0.0.1` (default) and is not exposed to the
+   network; keys never touch disk or code. By default only a summary log is written, located in
+   the system temp directory (zero runtime writes inside the skill folder); setting
+   `BRIDGE_DEBUG=1` records request bodies (first 8000 chars) and debug dumps in the temp
+   directory — request bodies may contain sensitive conversation content, so turn it off after
+   troubleshooting.
 
-## 排障
+## Troubleshooting
 
-| 症状 | 原因 | 处理 |
+| Symptom | Cause | Fix |
 |---|---|---|
-| 401 | 模型 ID 带了 `opencode-go/` 前缀 | 去掉前缀；见 `references/protocol-mapping.md` §2 |
-| 403 `error code: 1010` | Cloudflare 拦截默认 UA | 代理已内置浏览器 UA；勿用裸 urllib 直连 |
-| 400 `invalid_prompt`（客户端报「自定义模型错误 10000」） | 会话历史里 assistant 消息 content 是数组，part 类型 `text` 未转成 `output_text` | 升级到最新 `scripts/proxy.py`；新会话正常、有历史即报错是此 bug 的典型特征 |
-| 返回 `response` 对象而非 `chat.completion` | 直连了 `/responses` 端点 | 必须经代理 `http://127.0.0.1:8787/v1/chat/completions` |
-| 端口占用 | 代理重复启动 | 换 `PROXY_PORT` 或结束旧进程 |
-| 客户端报错但 curl 正常 | 请求结构差异 | 默认日志为摘要（系统临时目录 `%TEMP%/opencode-responses-bridge/`）；`BRIDGE_DEBUG=1` 后记录请求头与正文前 8000 字符，并写 `proxy-last-upstream.json` / `proxy-last-error.txt` |
+| 401 | model ID carries `opencode-go/` prefix | drop the prefix; see `references/protocol-mapping.md` §2 |
+| 403 `error code: 1010` | Cloudflare blocks the default UA | the proxy ships a browser UA; don't hit the endpoint with bare urllib |
+| 400 `invalid_prompt` (client reports "custom model error 10000") | assistant messages in the conversation history have array `content` whose `text` parts weren't re-typed to `output_text` | upgrade to the latest `scripts/proxy.py`; "first message works, fails once there is history" is the signature of this bug |
+| returns a `response` object instead of `chat.completion` | hit `/responses` directly | go through the proxy `http://127.0.0.1:8787/v1/chat/completions` |
+| port already in use | proxy started twice | change `PROXY_PORT` or kill the old process |
+| client errors but curl works | request-shape difference | default log is summary-only (system temp dir `%TEMP%/opencode-responses-bridge/`); with `BRIDGE_DEBUG=1` the log records headers and the first 8000 chars of the body, plus `proxy-last-upstream.json` / `proxy-last-error.txt` |
 
-## 资源
+## Resources
 
-- `scripts/proxy.py` — 转接代理（唯一运行入口，零依赖）
-- `scripts/start_proxy.bat` — Windows 启动脚本
-- `references/protocol-mapping.md` — 完整字段映射、SSE 事件表、实测样例与扩展指引
-- `examples/` — 各客户端接入示例（WorkBuddy / 通用 OpenAI 兼容 / curl 输入输出对）
+- `scripts/proxy.py` — the adapter proxy (only runtime entry, zero dependencies)
+- `scripts/start_proxy.bat` — Windows launcher
+- `references/protocol-mapping.md` — full field mapping, SSE event table, tested samples and
+  extension guide
+- `examples/` — per-client integration examples (WorkBuddy / generic OpenAI-compatible / curl
+  input-output pairs)
