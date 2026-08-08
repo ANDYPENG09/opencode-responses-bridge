@@ -20,11 +20,16 @@ Features:
   - Upstream URL / host / port configurable via environment variables
   - API key relayed from the incoming Authorization header, so the key lives
     in exactly one place (the client's model config)
+  - Privacy-safe logging: by default only a one-line summary is logged and
+    nothing is written next to the script; set BRIDGE_DEBUG=1 to record
+    headers (auth redacted) / request body and write debug dumps, all under
+    the system temp directory (never inside the skill folder).
 
 Usage:
   python proxy.py                              # defaults 127.0.0.1:8787
   PROXY_PORT=9000 python proxy.py              # custom port
   OPENCODE_UPSTREAM=https://... python proxy.py  # custom upstream
+  BRIDGE_DEBUG=1 python proxy.py               # full request logging + dumps
 
 Smoke test:
   curl http://127.0.0.1:8787/v1/chat/completions \
@@ -34,6 +39,7 @@ Smoke test:
 
 import json
 import os
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -43,21 +49,28 @@ UPSTREAM = os.environ.get("OPENCODE_UPSTREAM", "https://opencode.ai/zen/go/v1/re
 LISTEN_HOST = os.environ.get("PROXY_HOST", "127.0.0.1")
 LISTEN_PORT = int(os.environ.get("PROXY_PORT", "8787"))
 
+# When set to 1/true/yes/on, the proxy records headers (Authorization redacted)
+# and the request body (first 8000 chars) to the log, and writes debug dump
+# files. All log/dump files live under the system temp directory so no runtime
+# artifacts are ever created inside the skill folder.
+DEBUG = os.environ.get("BRIDGE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
 # Cloudflare rejects Python-urllib's default UA (error 1010); spoof a browser UA.
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proxy-requests.log")
-FULL_REQ_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proxy-last-request.json")
-FULL_UP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proxy-last-upstream.json")
-FULL_ERR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proxy-last-error.txt")
+LOG_DIR = os.path.join(tempfile.gettempdir(), "opencode-responses-bridge")
+LOG_PATH = os.path.join(LOG_DIR, "proxy-requests.log")
+FULL_UP_PATH = os.path.join(LOG_DIR, "proxy-last-upstream.json")
+FULL_ERR_PATH = os.path.join(LOG_DIR, "proxy-last-error.txt")
 
 
 def _log(msg):
     """Append a line to proxy-requests.log (best-effort, never raises)."""
     try:
+        os.makedirs(LOG_DIR, exist_ok=True)
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
     except Exception:
@@ -67,6 +80,7 @@ def _log(msg):
 def _dump(path, text):
     """Overwrite a debug dump file (best-effort, never raises)."""
     try:
+        os.makedirs(LOG_DIR, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
     except Exception:
@@ -392,21 +406,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404, "not found")
             return
 
+        started = time.time()
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length else b"{}"
-
-        # --- debug logging (auth redacted) ---
-        _log(f">>> {self.command} {self.path}")
-        _log(
-            "headers: "
-            + json.dumps(
-                {
-                    k: (v if k.lower() != "authorization" else "Bearer ***")
-                    for k, v in self.headers.items()
-                }
-            )
-        )
-        _log("body(first 8000): " + body.decode("utf-8", "replace")[:8000])
 
         try:
             req = json.loads(body.decode("utf-8") or "{}")
@@ -419,9 +421,26 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         token = auth.replace("Bearer ", "").replace("Bearer", "").strip()
 
+        # --- logging (privacy-safe by default) ---
+        # Default: one-line summary only. With BRIDGE_DEBUG=1: also log headers
+        # (Authorization redacted) and the request body (first 8000 chars).
+        _log(f">>> {self.command} {self.path} model={model}")
+        if DEBUG:
+            _log(
+                "headers: "
+                + json.dumps(
+                    {
+                        k: (v if k.lower() != "authorization" else "Bearer ***")
+                        for k, v in self.headers.items()
+                    }
+                )
+            )
+            _log("body(first 8000): " + body.decode("utf-8", "replace")[:8000])
+
         payload = build_responses_payload(req)
         data = json.dumps(payload).encode("utf-8")
-        _dump(FULL_UP_PATH, data.decode("utf-8", "replace"))
+        if DEBUG:
+            _dump(FULL_UP_PATH, data.decode("utf-8", "replace"))
 
         upstream_req = urllib.request.Request(UPSTREAM, data=data, method="POST")
         upstream_req.add_header("Content-Type", "application/json")
@@ -436,8 +455,9 @@ class Handler(BaseHTTPRequestHandler):
                 ctype = resp.headers.get("Content-Type", "")
                 if status != 200:
                     err = resp.read().decode("utf-8", "replace")
-                    _dump(FULL_ERR_PATH, err)
-                    _log(f"<<< upstream HTTP {status}: {err[:500]}")
+                    if DEBUG:
+                        _dump(FULL_ERR_PATH, err)
+                    _log(f"<<< upstream HTTP {status}" + (f": {err[:500]}" if DEBUG else ""))
                     self.send_response(status)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(err.encode("utf-8"))))
@@ -446,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
                 if payload.get("stream") or "text/event-stream" in ctype:
-                    _log("<<< 200 streaming")
+                    _log(f"<<< 200 streaming ({int((time.time() - started) * 1000)}ms)")
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Cache-Control", "no-cache")
@@ -461,7 +481,7 @@ class Handler(BaseHTTPRequestHandler):
                         upstream = {"raw": raw}
                     out = build_chat_response(upstream, model)
                     out_bytes = json.dumps(out, ensure_ascii=False).encode("utf-8")
-                    _log("<<< 200 json")
+                    _log(f"<<< 200 json ({int((time.time() - started) * 1000)}ms)")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(out_bytes)))
@@ -469,15 +489,16 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(out_bytes)
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8", "replace")
-            _dump(FULL_ERR_PATH, err)
-            _log(f"<<< upstream HTTPError {e.code}: {err[:500]}")
+            if DEBUG:
+                _dump(FULL_ERR_PATH, err)
+            _log(f"<<< upstream HTTPError {e.code}" + (f": {err[:500]}" if DEBUG else ""))
             self.send_response(e.code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(err.encode("utf-8"))))
             self.end_headers()
             self.wfile.write(err.encode("utf-8"))
         except Exception as e:  # noqa
-            _log(f"<<< exception: {str(e)[:500]}")
+            _log(f"<<< exception: {str(e)[:500]}" if DEBUG else f"<<< exception: {type(e).__name__}")
             msg = json.dumps({"error": str(e)}).encode("utf-8")
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
@@ -487,12 +508,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    os.makedirs(LOG_DIR, exist_ok=True)
     server = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
     print(
         f"OpenCode Responses Bridge listening on "
         f"http://{LISTEN_HOST}:{LISTEN_PORT}/v1/chat/completions"
     )
     print(f"Upstream: {UPSTREAM}")
+    print(f"Log file: {LOG_PATH}")
+    print(
+        f"Debug mode: {'ON' if DEBUG else 'OFF — set BRIDGE_DEBUG=1 to log request bodies and write debug dumps'}"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
